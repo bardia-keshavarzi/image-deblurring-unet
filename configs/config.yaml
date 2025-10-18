@@ -1,0 +1,52 @@
+# Configuration for Image Deblurring Project - GoPro Version
+
+project:
+  name: "Image Deblurring with GoPro"
+  version: "1.0.0"
+
+# Data configuration
+data:
+  image_size: 256
+  train_split: 0.8
+  val_split: 0.2
+  batch_size: 8
+  num_workers: 4
+  pin_memory: true
+  
+  # GoPro dataset paths
+  gopro_dir: "data/gopro"
+  train_sharp: "data/gopro/train/sharp"
+  train_blurred: "data/gopro/train/blurred"
+  test_sharp: "data/gopro/test/sharp"
+  test_blurred: "data/gopro/test/blurred"
+
+# Model configuration
+model:
+  name: "unet"
+  in_channels: 3
+  out_channels: 3
+
+# Training configuration
+training:
+  learning_rate: 0.0001
+  num_epochs: 50
+  
+  # Loss weights (simple L1 only for minimal version)
+  use_perceptual_loss: false
+  
+  # Early stopping
+  patience: 10
+  
+  # Checkpointing
+  save_dir: "checkpoints"
+  
+  # Logging
+  log_dir: "runs"
+
+# Traditional methods (for baseline comparison)
+traditional:
+  wiener:
+    noise_variance: 0.01
+  unsharp_mask:
+    sigma: 1.0
+    strength: 1.5
