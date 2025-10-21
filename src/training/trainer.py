@@ -16,7 +16,7 @@ from pathlib import Path
 from tqdm import tqdm
 import time
 
-from .losses import L1Loss
+from .losses import get_loss_function
 from .metrics import PSNRMetric, SSIMMetric
 
 
@@ -62,7 +62,7 @@ class Trainer:
         self.optimizer = torch.optim.Adam(model.parameters(), lr=lr)
         
         # Setup loss and metrics
-        self.criterion = L1Loss()
+        self.criterion = get_loss_function()
         self.psnr_metric = PSNRMetric()
         self.ssim_metric = SSIMMetric()
         
