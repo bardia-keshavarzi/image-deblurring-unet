@@ -157,8 +157,8 @@ class UNet(nn.Module):
         # Output
         x = self.outc(x)      # (B, 3, 256, 256)
         
-        # Use tanh to keep output in reasonable range
-        return torch.tanh(x)
+        # Use sigmoid to keep output in reasonable range
+        return torch.sigmoid(x)
 
 
 def count_parameters(model):
