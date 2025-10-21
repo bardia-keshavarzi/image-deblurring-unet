@@ -72,16 +72,16 @@ class DeblurTransforms:
             
             # Color transforms (subtle, to handle lighting variations)
             A.RandomBrightnessContrast(
-                brightness_limit=0.2,  # ±20% brightness
-                contrast_limit=0.2,     # ±20% contrast
-                p=0.3                   # 30% chance to apply
+                brightness_limit=0.1,  # Reduced
+                contrast_limit=0.1,     # Reduced
+                p=0.2                   # Reduced
             ),
             
             # Normalization (IMPORTANT for neural networks)
             A.Normalize(
-                mean=(0.5, 0.5, 0.5),
-                std=(0.5, 0.5, 0.5),  
-                max_pixel_value=255.0
+                mean=(0.0, 0.0, 0.0),  # Changed from 0.5
+                std=(1.0, 1.0, 1.0),    # Changed from 0.5
+                max_pixel_value=255.0   # Keep same
             ),
             
             # Convert to PyTorch tensor (H,W,C) -> (C,H,W)
