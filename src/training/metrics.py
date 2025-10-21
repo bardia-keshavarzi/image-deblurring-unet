@@ -111,34 +111,19 @@ class SSIMMetric:
         self.device = None  # Track current device
     
     def __call__(self, pred, target):
-        """
-        Calculate SSIM between prediction and target
-        
-        Args:
-            pred: Predicted image tensor (B, C, H, W) in range [-1, 1]
-            target: Target image tensor (B, C, H, W) in range [-1, 1]
-        
-        Returns:
-            SSIM value between 0 and 1 (scalar)
-        """
-        # CRITICAL FIX: Move metric to same device as input
         if self.device != pred.device:
             self.metric = self.metric.to(pred.device)
             self.device = pred.device
         
-        # Convert from [-1, 1] to [0, 1]
-        pred = (pred + 1.0) / 2.0
-        target = (target + 1.0) / 2.0
-        
-        # Clamp to ensure values are in valid range
+        # Data already in [0, 1] - just clamp
         pred = torch.clamp(pred, 0.0, 1.0)
         target = torch.clamp(target, 0.0, 1.0)
         
         return self.metric(pred, target).item()
-    
-    def reset(self):
-        """Reset metric state"""
-        self.metric.reset()
+        
+        def reset(self):
+            """Reset metric state"""
+            self.metric.reset()
 
 
 def calculate_psnr(pred, target):
