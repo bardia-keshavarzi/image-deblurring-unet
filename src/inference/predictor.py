@@ -51,7 +51,6 @@ class DeblurPredictor:
         
         print(f"✓ Model loaded on {self.device}")
     
-    @torch.inference_mode()
     def predict(self, blurred_image: np.ndarray) -> np.ndarray:
         """
         Deblur a single image
@@ -62,21 +61,12 @@ class DeblurPredictor:
         Returns:
             Deblurred image (H, W, 3) RGB, uint8 [0, 255]
         """
-        # Validate input
-        if not isinstance(blurred_image, np.ndarray):
-            raise TypeError(f"Expected numpy array, got {type(blurred_image)}")
-        
-        if blurred_image.ndim != 3 or blurred_image.shape[2] != 3:
-            raise ValueError(f"Expected (H, W, 3) RGB image, got shape {blurred_image.shape}")
-        
-        if blurred_image.dtype != np.uint8:
-            raise TypeError(f"Expected uint8, got {blurred_image.dtype}")
-        
         # Preprocess
         input_tensor = self._preprocess(blurred_image)
         
-        # Predict (no need for torch.no_grad(), using @torch.inference_mode())
-        output_tensor = self.model(input_tensor)
+        # Predict
+        with torch.no_grad():
+            output_tensor = self.model(input_tensor)
         
         # Postprocess
         deblurred = self._postprocess(output_tensor)
@@ -85,26 +75,14 @@ class DeblurPredictor:
     
     def _preprocess(self, image: np.ndarray) -> torch.Tensor:
         """
-        Convert image to tensor and pad to divisible by 16
+        Convert image to tensor
         
         Args:
             image: (H, W, 3) uint8 [0, 255]
         
         Returns:
-            tensor: (1, 3, H_padded, W_padded) float32 [0, 1]
+            tensor: (1, 3, H, W) float32 [0, 1]
         """
-        # Store original size for later cropping
-        self.original_h, self.original_w = image.shape[:2]
-        
-        # Calculate padding to make dimensions divisible by 16
-        pad_h = (16 - self.original_h % 16) % 16
-        pad_w = (16 - self.original_w % 16) % 16
-        
-        # Apply padding if needed
-        if pad_h > 0 or pad_w > 0:
-            image = np.pad(image, ((0, pad_h), (0, pad_w), (0, 0)), mode='reflect')
-            print(f"Padded image from ({self.original_h}, {self.original_w}) to {image.shape[:2]}")
-        
         # Normalize to [0, 1]
         image_float = image.astype(np.float32) / 255.0
         
@@ -121,10 +99,10 @@ class DeblurPredictor:
     
     def _postprocess(self, tensor: torch.Tensor) -> np.ndarray:
         """
-        Convert tensor back to image and remove padding
+        Convert tensor back to image
         
         Args:
-            tensor: (1, 3, H_padded, W_padded) float32 [0, 1]
+            tensor: (1, 3, H, W) float32 [0, 1]
         
         Returns:
             image: (H, W, 3) uint8 [0, 255]
@@ -137,9 +115,6 @@ class DeblurPredictor:
         
         # Convert (C, H, W) -> (H, W, C)
         image = tensor.permute(1, 2, 0).numpy()
-        
-        # Crop back to original size (remove padding)
-        image = image[:self.original_h, :self.original_w, :]
         
         # Clip and convert to uint8
         image = np.clip(image * 255.0, 0, 255).astype(np.uint8)
