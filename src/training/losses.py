@@ -9,10 +9,14 @@ class PerceptualLoss(nn.Module):
         for param in vgg.parameters():
             param.requires_grad = False
         self.vgg = vgg.eval()
+
     def forward(self, pred, target):
+        device = pred.device
+        self.vgg = self.vgg.to(device)
         # inputs must be 0-1, 3 channels
         return nn.functional.l1_loss(
-            self.vgg((pred+1)/2), self.vgg((target+1)/2))
+            self.vgg((pred+1)/2), self.vgg((target+1)/2)
+    )
 
 def get_loss_function():
     l1 = nn.L1Loss()
