@@ -64,7 +64,7 @@ class Trainer:
 
         # Setup LR scheduler
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            self.optimizer, mode='max', factor=0.5, patience=3, verbose=True
+            self.optimizer, mode='max', factor=0.5, patience=3
         )
 
         # Setup loss and metrics
