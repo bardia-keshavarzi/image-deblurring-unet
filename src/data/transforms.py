@@ -1,5 +1,5 @@
 # src/data/transforms.py
-"""Data Transforms - Updated to ensure identical spatial sizes and tanh scaling"""
+"""Data Transforms - Updated to ensure identical spatial sizes and tanh scaling (Colab-compatible)"""
 
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
@@ -25,9 +25,12 @@ class DeblurTransforms:
     def _common_norm(self):
         # Normalize to [0,1]
         ops = [A.Normalize(mean=(0.0, 0.0, 0.0), std=(1.0, 1.0, 1.0), max_pixel_value=255.0)]
-        # Optional: map to [-1,1] expected by tanh
+        # Optional: map to [-1,1] expected by tanh; use Albumentations' ImageOnlyTransform for compatibility
         if self.tanh:
-            ops.append(A.Lambda(image=lambda x: x * 2.0 - 1.0, always_apply=True))
+            class ScaleToTanh(A.ImageOnlyTransform):
+                def apply(self, img, **params):
+                    return img * 2.0 - 1.0
+            ops.append(ScaleToTanh(always_apply=True, p=1.0))
         ops.append(ToTensorV2())
         return ops
     
