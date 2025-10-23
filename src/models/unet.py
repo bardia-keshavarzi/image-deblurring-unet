@@ -10,6 +10,7 @@ Changes from original:
 - FIXED: Removed problematic sigmoid activation
 - ADDED: Gradient clipping support
 - ADDED: Better output handling
+- FIXED: Align upsampled features to skip shapes before concat to avoid size mismatch
 
 Expected: 28-30 dB PSNR
 """
@@ -81,7 +82,14 @@ class Up(nn.Module):
         self.conv = DoubleConv(in_channels, out_channels)
     
     def forward(self, x, skip):
+        # Upsample decoder feature
         x = self.up(x)
+        # Align to skip spatial size to avoid off-by-one / rounding issues
+        if x.shape[-2:] != skip.shape[-2:]:
+            x = torch.nn.functional.interpolate(
+                x, size=skip.shape[-2:], mode='bilinear', align_corners=True
+            )
+        # Concatenate along channels
         x = torch.cat([x, skip], dim=1)
         return self.conv(x)
 
@@ -134,9 +142,6 @@ class UNet(nn.Module):
         )
     
     def forward(self, x):
-        # Store input for potential residual connection
-        input_x = x
-        
         # Encoder with skip connections
         x1 = self.input_conv(x)
         x2 = self.down1(x1)
@@ -147,7 +152,7 @@ class UNet(nn.Module):
         # Bottleneck
         b = self.bottleneck(x5)
         
-        # Decoder
+        # Decoder with aligned concatenations
         d4 = self.up4(b, x5)
         d3 = self.up3(d4, x4)
         d2 = self.up2(d3, x3)
@@ -164,17 +169,14 @@ class UNet(nn.Module):
         elif self.output_activation == 'none':
             pass  # No activation - let network learn the range
         else:
-            # Default: tanh for better training dynamics
             out = torch.tanh(out)
         
         return out
     
     def get_parameter_count(self):
-        """Get total number of parameters"""
         return sum(p.numel() for p in self.parameters())
     
     def enable_gradient_clipping(self, max_norm=1.0):
-        """Enable gradient clipping for training stability"""
         for param in self.parameters():
             if param.grad is not None:
                 torch.nn.utils.clip_grad_norm_(param, max_norm)
@@ -182,48 +184,25 @@ class UNet(nn.Module):
 
 # Factory function for easy model creation
 def create_deblur_unet(in_channels=3, out_channels=3, output_activation='tanh'):
-    """
-    Factory function to create U-Net for image deblurring
-    
-    Args:
-        in_channels: Input channels (3 for RGB)
-        out_channels: Output channels (3 for RGB)
-        output_activation: 'tanh', 'sigmoid', or 'none'
-            - 'tanh': Recommended for normalized data [-1,1]
-            - 'sigmoid': For data in range [0,1]
-            - 'none': No activation, network learns range
-    
-    Returns:
-        UNet model ready for training
-    """
     return UNet(in_channels, out_channels, output_activation)
 
 
 # Test and diagnostics
 if __name__ == '__main__':
-    # Test model with different configurations
     print("Testing improved U-Net for image deblurring...")
-    
-    # Test with tanh activation (recommended)
     model_tanh = create_deblur_unet(output_activation='tanh')
     x = torch.randn(1, 3, 384, 384)
     y_tanh = model_tanh(x)
-    
-    # Test with no activation
     model_none = create_deblur_unet(output_activation='none')
     y_none = model_none(x)
-    
-    # Print diagnostics
     params = model_tanh.get_parameter_count()
     print(f"\nModel Statistics:")
     print(f"Parameters: {params:,} (~{params/1e6:.1f}M)")
     print(f"Input shape: {x.shape}")
     print(f"Output shape: {y_tanh.shape}")
-    
     print(f"\nOutput Ranges:")
     print(f"Tanh activation: [{y_tanh.min():.3f}, {y_tanh.max():.3f}]")
     print(f"No activation: [{y_none.min():.3f}, {y_none.max():.3f}]")
-    
     print(f"\nRecommendations:")
     print(f"- Use 'tanh' activation with data normalized to [-1, 1]")
     print(f"- Use 'none' activation with data normalized to [0, 1]")
