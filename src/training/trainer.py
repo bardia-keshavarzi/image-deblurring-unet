@@ -8,6 +8,7 @@ Added:
 - Loss combination support
 - MAIN: runnable entrypoint for `python -m src.training.trainer`
 - FIX: Properly glob files from organized GoPro folders and support Colab /content/data root
+- FIX: Use ReduceLROnPlateau arguments compatible with Colab's torch version (no verbose, use threshold_mode)
 """
 
 import torch
@@ -63,13 +64,14 @@ class Trainer:
         ) or 0.0002
         self.optimizer = torch.optim.Adam(model.parameters(), lr=lr)
         
-        # NEW: Learning rate scheduler
+        # NEW: Learning rate scheduler (compatible args)
         self.scheduler = ReduceLROnPlateau(
             self.optimizer,
-            mode='max',  # Maximize PSNR
-            factor=0.5,  # Reduce LR by half
-            patience=5,  # After 5 epochs no improvement
-            verbose=True,
+            mode='max',          # Maximize PSNR
+            factor=0.5,          # Reduce LR by half
+            patience=5,          # After 5 epochs no improvement
+            threshold=1e-4,      # Significant change threshold
+            threshold_mode='rel',# Relative improvements
             min_lr=1e-6
         )
         
@@ -221,29 +223,23 @@ def _resolve_data_roots(config):
     Expects organized structure as created by scripts/organize_gopro.py:
     /.../data/gopro/{train,test}/{blurred,sharp}
     """
-    # Allow overriding data root via ENV or fallback to config
     data_root_env = os.environ.get('DATA_ROOT', None)
     if data_root_env:
         base = Path(data_root_env)
     else:
-        # If on Colab and /content/data exists, prefer it
         colab_root = Path('/content/data')
         base = colab_root if colab_root.exists() else Path('.')
     
     def pick(path_str: str) -> Path:
         p = Path(path_str)
-        # If absolute or exists, use as-is
         if p.is_absolute() and p.exists():
             return p
-        # Try relative to repo root
         repo_rel = Path(path_str)
         if repo_rel.exists():
             return repo_rel
-        # Try under /content/data when on Colab
         candidate = base / Path(path_str).name if base.exists() else repo_rel
         return candidate
     
-    # Build directories from config keys
     dcfg = config['data']
     train_sharp = pick(dcfg['train_sharp'])
     train_blur = pick(dcfg['train_blurred'])
@@ -256,16 +252,13 @@ def _build_from_config(config_path: str):
     with open(config_path, 'r') as f:
         config = yaml.safe_load(f)
     
-    # Resolve dataset directories
     train_sharp_dir, train_blur_dir, val_sharp_dir, val_blur_dir = _resolve_data_roots(config)
     
-    # Glob images from organized folders
     train_sharp_paths = _glob_images(train_sharp_dir)
     train_blurred_paths = _glob_images(train_blur_dir)
     val_sharp_paths = _glob_images(val_sharp_dir)
     val_blurred_paths = _glob_images(val_blur_dir)
 
-    # Sanity checks
     if not train_sharp_paths or not train_blurred_paths:
         raise RuntimeError(f"No training images found. Sharp: {train_sharp_dir}, Blurred: {train_blur_dir}")
     if len(train_sharp_paths) != len(train_blurred_paths):
@@ -273,7 +266,6 @@ def _build_from_config(config_path: str):
     if len(val_sharp_paths) != len(val_blurred_paths):
         print(f"⚠️ Val sharp/blur count mismatch: {len(val_sharp_paths)} vs {len(val_blurred_paths)}")
 
-    # Create model
     model_cfg = config['model']
     model = create_deblur_unet(
         in_channels=model_cfg.get('in_channels', 3),
@@ -281,7 +273,6 @@ def _build_from_config(config_path: str):
         output_activation=model_cfg.get('output_activation', 'tanh')
     )
 
-    # Datasets and loaders
     image_size = int(config['data'].get('image_size', 384))
     augment = bool(config['data'].get('augmentation', True))
     num_workers = int(config['data'].get('num_workers', 4))
