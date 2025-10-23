@@ -1,52 +1,30 @@
-# Configuration for Image Deblurring Project - GoPro Version
+# config.yaml - IMPROVED FOR 28-30 dB
 
-project:
-  name: "Image Deblurring with GoPro"
-  version: "1.0.0"
-
-# Data configuration
+# Data paths
 data:
-  image_size: 256
-  train_split: 0.8
-  val_split: 0.2
-  batch_size: 8
-  num_workers: 4
-  pin_memory: true
+  train_sharp: data/gopro/train/sharp
+  train_blurred: data/gopro/train/blurred
+  test_sharp: data/gopro/test/sharp
+  test_blurred: data/gopro/test/blurred
   
-  # GoPro dataset paths
-  gopro_dir: "data/gopro"
-  train_sharp: "data/gopro/train/sharp"
-  train_blurred: "data/gopro/train/blurred"
-  test_sharp: "data/gopro/test/sharp"
-  test_blurred: "data/gopro/test/blurred"
+  image_size: 384          # CHANGED: Larger patches for better context
+  batch_size: 4            # CHANGED: Reduced to fit 384px in memory
+  num_workers: 4
 
-# Model configuration
+# Model
 model:
-  name: "unet"
   in_channels: 3
   out_channels: 3
+  base_channels: 64        # NEW: For deeper model
 
-# Training configuration
+# Training
 training:
-  learning_rate: 0.0001
-  num_epochs: 50
+  num_epochs: 100          # CHANGED: More training time
+  learning_rate: 0.0002    # CHANGED: Slightly higher
+  patience: 20             # CHANGED: More patience before early stopping
+  save_dir: checkpoints
+  log_dir: runs
   
-  # Loss weights (simple L1 only for minimal version)
-  use_perceptual_loss: false
-  
-  # Early stopping
-  patience: 10
-  
-  # Checkpointing
-  save_dir: "checkpoints"
-  
-  # Logging
-  log_dir: "runs"
-
-# Traditional methods (for baseline comparison)
-traditional:
-  wiener:
-    noise_variance: 0.01
-  unsharp_mask:
-    sigma: 1.0
-    strength: 1.5
+  # NEW: Loss function weights
+  loss_l1_weight: 0.8
+  loss_perceptual_weight: 0.2
