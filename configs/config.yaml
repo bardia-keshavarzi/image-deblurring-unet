@@ -1,30 +1,73 @@
-# config.yaml - IMPROVED FOR 28-30 dB
+# config.yaml - OPTIMIZED FOR 28-30 dB PSNR
+# Fixed gray output issues and improved training dynamics
 
 # Data paths
 data:
   train_sharp: data/gopro/train/sharp
   train_blurred: data/gopro/train/blurred
   test_sharp: data/gopro/test/sharp
-  test_blurred: data/gopro/test/blurred
+  test_blurred: data/gopro/test/test_blurred
   
-  image_size: 384          # CHANGED: Larger patches for better context
-  batch_size: 4            # CHANGED: Reduced to fit 384px in memory
+  image_size: 384          # Large patches for better context
+  batch_size: 8            # INCREASED: Better gradient estimates (reduce if OOM)
   num_workers: 4
+  
+  # Data normalization (IMPORTANT: matches model output)
+  normalize_range: [-1, 1]  # NEW: For tanh activation
+  augmentation: true        # NEW: Enable data augmentation
 
-# Model
+# Model configuration
 model:
   in_channels: 3
   out_channels: 3
-  base_channels: 64        # NEW: For deeper model
+  base_channels: 64
+  output_activation: 'tanh'  # NEW: Fixed gray output issue
 
-# Training
+# Training parameters (OPTIMIZED)
 training:
-  num_epochs: 100          # CHANGED: More training time
-  learning_rate: 0.0002    # CHANGED: Slightly higher
-  patience: 20             # CHANGED: More patience before early stopping
+  num_epochs: 150          # INCREASED: More training for better convergence
+  learning_rate: 0.001     # INCREASED: Faster initial learning
+  
+  # Learning rate scheduling (NEW)
+  lr_scheduler: 'cosine'   # Cosine annealing for better convergence
+  lr_warmup_epochs: 10     # Gradual warmup
+  lr_min: 0.00001         # Minimum learning rate
+  
+  # Training stability (NEW)
+  gradient_clipping: 1.0   # Prevent gradient explosion
+  mixed_precision: true    # Faster training, less memory
+  
+  # Early stopping
+  patience: 30             # INCREASED: More patience for convergence
+  
+  # Directories
   save_dir: checkpoints
   log_dir: runs
   
-  # NEW: Loss function weights
-  loss_l1_weight: 0.8
-  loss_perceptual_weight: 0.2
+  # Loss function configuration (OPTIMIZED)
+  loss_l1_weight: 0.8      # Primary reconstruction loss
+  loss_perceptual_weight: 0.2  # Perceptual quality
+  loss_ssim_weight: 0.0    # Optional: Add SSIM loss if available
+  
+  # Validation and checkpointing
+  val_frequency: 5         # Validate every 5 epochs
+  save_frequency: 10       # Save checkpoint every 10 epochs
+  
+# Optimizer settings (NEW)
+optimizer:
+  type: 'adamw'           # AdamW for better generalization
+  weight_decay: 0.01      # L2 regularization
+  betas: [0.9, 0.999]     # Adam momentum parameters
+  eps: 1e-8              # Numerical stability
+
+# Hardware optimization (NEW)
+hardware:
+  device: 'auto'          # Auto-detect GPU/CPU
+  benchmark: true         # Enable cudnn benchmark for faster training
+  deterministic: false    # Set to true for reproducible results (slower)
+  
+# Logging and monitoring (NEW)
+logging:
+  log_frequency: 100      # Log every 100 iterations
+  image_log_frequency: 500 # Save sample images every 500 iterations
+  wandb_project: 'image-deblurring-unet'  # Optional: Weights & Biases logging
