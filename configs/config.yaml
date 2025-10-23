@@ -6,7 +6,7 @@ data:
   train_sharp: data/gopro/train/sharp
   train_blurred: data/gopro/train/blurred
   test_sharp: data/gopro/test/sharp
-  test_blurred: data/gopro/test/test_blurred
+  test_blurred: data/gopro/test/blurred
   
   image_size: 384          # Large patches for better context
   batch_size: 8            # INCREASED: Better gradient estimates (reduce if OOM)
