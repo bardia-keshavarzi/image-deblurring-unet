@@ -3,7 +3,7 @@
 Loss Functions - IMPROVED
 
 Adds perceptual loss for better visual quality
-Also enforces size alignment between prediction and target to avoid broadcasting errors.
+Also enforces size alignment and device consistency to avoid runtime errors.
 """
 
 import torch
@@ -13,7 +13,7 @@ import torch.nn.functional as F
 
 
 class PerceptualLoss(nn.Module):
-    """VGG-based perceptual loss"""
+    """VGG-based perceptual loss with device-safe buffers"""
     
     def __init__(self):
         super().__init__()
@@ -21,11 +21,15 @@ class PerceptualLoss(nn.Module):
         self.vgg = vgg.eval()
         for param in self.vgg.parameters():
             param.requires_grad = False
+        # Register on-module buffers; they'll move with .to(device)
         self.register_buffer('mean', torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1))
         self.register_buffer('std', torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1))
         self.l1 = nn.L1Loss()
     
     def forward(self, pred, target):
+        # Ensure VGG on the same device as inputs
+        if next(self.vgg.parameters()).device != pred.device:
+            self.vgg = self.vgg.to(pred.device)
         # Expect both in [-1,1]; map to [0,1] before ImageNet norm
         pred_01 = (pred + 1.0) * 0.5
         target_01 = (target + 1.0) * 0.5
@@ -37,7 +41,7 @@ class PerceptualLoss(nn.Module):
 
 
 class CombinedLoss(nn.Module):
-    """L1 + Perceptual Loss with shape-safe alignment"""
+    """L1 + Perceptual Loss with shape/device-safe alignment"""
     
     def __init__(self, alpha=0.8, beta=0.2):
         super().__init__()
@@ -48,21 +52,23 @@ class CombinedLoss(nn.Module):
     
     @staticmethod
     def _match_size(x, ref):
-        # If shapes differ, resize x to ref spatial size
         if x.shape[-2:] != ref.shape[-2:]:
             x = F.interpolate(x, size=ref.shape[-2:], mode='bilinear', align_corners=True)
+            
         return x
     
     def forward(self, pred, target):
+        # Move perceptual submodules/buffers to the correct device if needed
+        if self.perceptual.mean.device != pred.device:
+            self.perceptual.to(pred.device)
         # Ensure same spatial size
         pred = self._match_size(pred, target)
         # L1 in same scale
         l1_loss = self.l1(pred, target)
-        # Perceptual (operates on resized inside vgg path already aligned)
+        # Perceptual
         perceptual_loss = self.perceptual(pred, target)
         return self.alpha * l1_loss + self.beta * perceptual_loss
 
 
 def get_loss_function():
-    """Get combined loss function"""
     return CombinedLoss(alpha=0.8, beta=0.2)
