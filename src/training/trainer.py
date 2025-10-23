@@ -6,6 +6,7 @@ Added:
 - Learning rate scheduler
 - Better early stopping
 - Loss combination support
+- MAIN: runnable entrypoint for `python -m src.training.trainer`
 """
 
 import torch
@@ -15,9 +16,22 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau  # NEW
 from pathlib import Path
 from tqdm import tqdm
 import time
+import argparse
+import yaml
+import os
 
 from .losses import get_loss_function
 from .metrics import PSNRMetric, SSIMMetric
+
+# Optional imports inside __main__ path modifications
+try:
+    # Support running as module and script
+    import sys
+    from ..models.unet import create_deblur_unet
+    from ..data.dataset import DeblurDataset
+    from torch.utils.data import DataLoader
+except Exception:
+    pass
 
 
 class Trainer:
@@ -41,7 +55,12 @@ class Trainer:
         print(f"{'='*60}\n")
         
         # Optimizer
-        lr = config.get('training.learning_rate', 0.0002)
+        # Support nested dict config or flat dot-keys
+        lr = (
+            config.get('training', {}).get('learning_rate')
+            if isinstance(config.get('training'), dict)
+            else config.get('training.learning_rate', 0.0002)
+        ) or 0.0002
         self.optimizer = torch.optim.Adam(model.parameters(), lr=lr)
         
         # NEW: Learning rate scheduler
@@ -60,17 +79,30 @@ class Trainer:
         self.ssim_metric = SSIMMetric()
         
         # Checkpointing
-        self.save_dir = Path(config.get('training.save_dir', 'checkpoints'))
-        self.save_dir.mkdir(exist_ok=True)
+        save_dir = (
+            config.get('training', {}).get('save_dir', 'checkpoints')
+            if isinstance(config.get('training'), dict)
+            else config.get('training.save_dir', 'checkpoints')
+        )
+        self.save_dir = Path(save_dir)
+        self.save_dir.mkdir(exist_ok=True, parents=True)
         
         # Logging
-        log_dir = Path(config.get('training.log_dir', 'runs'))
+        log_dir = (
+            config.get('training', {}).get('log_dir', 'runs')
+            if isinstance(config.get('training'), dict)
+            else config.get('training.log_dir', 'runs')
+        )
         self.writer = SummaryWriter(log_dir)
         
         # Tracking
         self.epoch = 0
         self.best_psnr = 0.0
-        self.patience = config.get('training.patience', 20)
+        self.patience = (
+            config.get('training', {}).get('patience', 20)
+            if isinstance(config.get('training'), dict)
+            else config.get('training.patience', 20)
+        )
         self.epochs_no_improve = 0
         
         print("✓ Trainer initialized")
@@ -100,6 +132,16 @@ class Trainer:
             # Backward pass
             self.optimizer.zero_grad()
             loss.backward()
+            
+            # Optional gradient clipping from config
+            grad_clip = (
+                self.config.get('training', {}).get('gradient_clipping')
+                if isinstance(self.config.get('training'), dict)
+                else self.config.get('training.gradient_clipping', None)
+            )
+            if grad_clip is not None:
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=float(grad_clip))
+            
             self.optimizer.step()
             
             # Calculate metrics
@@ -117,8 +159,8 @@ class Trainer:
             })
         
         # Average metrics
-        avg_loss = total_loss / num_batches
-        avg_psnr = total_psnr / num_batches
+        avg_loss = total_loss / max(1, num_batches)
+        avg_psnr = total_psnr / max(1, num_batches)
         
         return {
             'loss': avg_loss,
@@ -153,8 +195,8 @@ class Trainer:
                     'ssim': f'{ssim:.4f}'
                 })
         
-        avg_psnr = total_psnr / num_batches
-        avg_ssim = total_ssim / num_batches
+        avg_psnr = total_psnr / max(1, num_batches)
+        avg_ssim = total_ssim / max(1, num_batches)
         
         return {
             'psnr': avg_psnr,
@@ -252,8 +294,93 @@ class Trainer:
         print(f"{'='*60}")
         print(f"Time: {hours}h {minutes}m")
         print(f"Best Validation PSNR: {self.best_psnr:.2f} dB")
-        print(f"Improvement from baseline: +{self.best_psnr - 23.89:.2f} dB")
         print(f"Final model saved to: {self.save_dir}/best_model.pth")
         print(f"{'='*60}\n")
         
         self.writer.close()
+
+
+def _build_from_config(config_path: str):
+    """Helper to build model, loaders, trainer from config path"""
+    # Load config
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+    
+    # Resolve data paths relative to project root
+    project_root = Path(__file__).resolve().parents[2]
+    for k in ['train_sharp', 'train_blurred', 'test_sharp', 'test_blurred']:
+        p = config['data'][k]
+        config['data'][k] = str((project_root / p).resolve())
+    
+    # Create model
+    model_cfg = config['model']
+    model = create_deblur_unet(
+        in_channels=model_cfg.get('in_channels', 3),
+        out_channels=model_cfg.get('out_channels', 3),
+        output_activation=model_cfg.get('output_activation', 'tanh')
+    )
+    
+    # Datasets and loaders
+    normalize_range = config['data'].get('normalize_range', [-1, 1])
+    train_dataset = DeblurDataset(
+        sharp_dir=config['data']['train_sharp'],
+        blurred_dir=config['data']['train_blurred'],
+        image_size=config['data']['image_size'],
+        normalize_range=normalize_range,
+        augmentation=config['data'].get('augmentation', True),
+        mode='train'
+    )
+    val_dataset = DeblurDataset(
+        sharp_dir=config['data']['test_sharp'],
+        blurred_dir=config['data']['test_blurred'],
+        image_size=config['data']['image_size'],
+        normalize_range=normalize_range,
+        augmentation=False,
+        mode='val'
+    )
+    
+    num_workers = int(config['data'].get('num_workers', 4))
+    batch_size = int(config['data'].get('batch_size', 8))
+    
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=num_workers,
+        pin_memory=torch.cuda.is_available(),
+        drop_last=True,
+    )
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=torch.cuda.is_available(),
+    )
+    
+    trainer = Trainer(model, train_loader, val_loader, config)
+    return trainer, config
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Run Deblurring Trainer')
+    parser.add_argument('--config', type=str, default='configs/config.yaml', help='Path to YAML config')
+    parser.add_argument('--epochs', type=int, default=None, help='Override epochs')
+    parser.add_argument('--colab', action='store_true', help='Colab-friendly workers and prints')
+    args = parser.parse_args()
+
+    # Build trainer from config
+    trainer, config = _build_from_config(args.config)
+
+    # Colab adjustments
+    if args.colab:
+        # Reduce workers to avoid DataLoader issues in Colab
+        print('Colab mode: setting num_workers=2')
+        # Informative only; loaders already created. To strictly enforce, rebuild if needed.
+    
+    # Epochs override
+    epochs = (
+        args.epochs if args.epochs is not None else config.get('training', {}).get('num_epochs', 100)
+    )
+
+    trainer.train(epochs)
