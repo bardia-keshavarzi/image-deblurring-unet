@@ -138,15 +138,17 @@ class Trainer:
             for blurred, sharp in pbar:
                 blurred = blurred.to(self.device)
                 sharp = sharp.to(self.device)
-                
+
                 pred = self.model(blurred)
-                
+
+                # Compute metrics correctly
                 psnr = self.psnr_metric(pred, sharp)
-                ssim = self.ssim_metric(pverbose=Truered, sharp)
-                
+                ssim = self.ssim_metric(pred, sharp)  # ✅ fixed call
+
                 total_psnr += psnr
                 total_ssim += ssim
-                
+
+                # Update progress bar properly
                 pbar.set_postfix({
                     'psnr': f'{psnr:.2f}',
                     'ssim': f'{ssim:.4f}'
