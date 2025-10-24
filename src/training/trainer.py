@@ -1,322 +1,145 @@
-# src/training/trainer.py
 """
-Trainer - IMPROVED
-
-Added:
-- Learning rate scheduler
-- Better early stopping
-- Loss combination support
+Trainer with integrated entry point
+Uses ReduceLROnPlateau, early stopping, and perceptual + L1 loss
 """
 
 import torch
-import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
-from torch.optim.lr_scheduler import ReduceLROnPlateau  # NEW
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 from pathlib import Path
 from tqdm import tqdm
 import time
+import os
+import sys
 
 from src.training.losses import get_loss_function
 from src.training.metrics import PSNRMetric, SSIMMetric
+from src.models.unet import UNet
+from src.utils.config import Config
+from src.data.dataset import create_dataloaders
 
 
 class Trainer:
-    """Training manager"""
-    
     def __init__(self, model, train_loader, val_loader, config):
-        self.model = model
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.model = model.to(self.device)
         self.train_loader = train_loader
         self.val_loader = val_loader
         self.config = config
-        
-        # Device
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.model = self.model.to(self.device)
-        
-        print(f"\n{'='*60}")
-        print(f"Training Device: {self.device}")
-        if self.device.type == 'cuda':
-            print(f"GPU: {torch.cuda.get_device_name(0)}")
-            print(f"GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
-        print(f"{'='*60}\n")
-        
-        # Optimizer
-        lr = config.get('training.learning_rate', 0.0002)
-        self.optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-        
-        # NEW: Learning rate scheduler
-        self.scheduler = ReduceLROnPlateau(
-            self.optimizer,
-            mode='max',  # Maximize PSNR
-            factor=0.5,  # Reduce LR by half
-            patience=5,  # After 5 epochs no improvement
-            min_lr=1e-6,
-        )
-        
-        # Loss and metrics
+
+        lr = config.get("training.learning_rate", 0.0002)
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
+        self.scheduler = ReduceLROnPlateau(self.optimizer, mode="max", factor=0.5, patience=5, min_lr=1e-6)
         self.criterion = get_loss_function()
         self.psnr_metric = PSNRMetric()
         self.ssim_metric = SSIMMetric()
-        
-        # Checkpointing
-        self.save_dir = Path(config.get('training.save_dir', 'checkpoints'))
-        self.save_dir.mkdir(exist_ok=True)
-        
-        # Logging
-        log_dir = Path(config.get('training.log_dir', 'runs'))
-        self.writer = SummaryWriter(log_dir)
-        
-        # Tracking
-        self.epoch = 0
+
+        self.save_dir = Path(config.get("training.save_dir", "checkpoints"))
+        self.save_dir.mkdir(parents=True, exist_ok=True)
+        self.writer = SummaryWriter(Path(config.get("training.log_dir", "runs")))
+
         self.best_psnr = 0.0
-        self.patience = config.get('training.patience', 20)
         self.epochs_no_improve = 0
-        
-        print("✓ Trainer initialized")
-        print(f"  Optimizer: Adam (lr={lr})")
-        print(f"  Loss: Combined (L1 + Perceptual)")
-        print(f"  LR Scheduler: ReduceLROnPlateau")
-        print(f"  Save dir: {self.save_dir}\n")
-    
-    def train_one_epoch(self):
-        """Train for one epoch"""
+        self.patience = config.get("training.patience", 20)
+        print(f"✓ Trainer initialized on: {self.device}")
+
+    def train_one_epoch(self, epoch):
         self.model.train()
-        
-        total_loss = 0.0
-        total_psnr = 0.0
-        num_batches = len(self.train_loader)
-        
-        pbar = tqdm(self.train_loader, desc=f"Epoch {self.epoch+1} [Train]")
-        
-        for batch_idx, (blurred, sharp) in enumerate(pbar):
-            blurred = blurred.to(self.device)
-            sharp = sharp.to(self.device)
-            
-            # Forward pass
+        total_loss = total_psnr = 0.0
+
+        pbar = tqdm(self.train_loader, desc=f"Epoch {epoch + 1} [Train]")
+        for blurred, sharp in pbar:
+            blurred, sharp = blurred.to(self.device), sharp.to(self.device)
             pred = self.model(blurred)
             loss = self.criterion(pred, sharp)
-            
-            # Backward pass
+
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
-            
-            # Calculate metrics
-            with torch.no_grad():
-                psnr = self.psnr_metric(pred, sharp)
-            
-            # Accumulate
+            psnr = self.psnr_metric(pred, sharp)
+
             total_loss += loss.item()
             total_psnr += psnr
-            
-            # Update progress bar
-            pbar.set_postfix({
-                'loss': f'{loss.item():.4f}',
-                'psnr': f'{psnr:.2f}'
-            })
-        
-        # Average metrics
-        avg_loss = total_loss / num_batches
-        avg_psnr = total_psnr / num_batches
-        
-        return {
-            'loss': avg_loss,
-            'psnr': avg_psnr
-        }
-    
-    def validate(self):
-        """Validate model"""
+            pbar.set_postfix(loss=f"{loss.item():.4f}", psnr=f"{psnr:.2f}")
+
+        return {"loss": total_loss / len(self.train_loader), "psnr": total_psnr / len(self.train_loader)}
+
+    def validate(self, epoch):
         self.model.eval()
-        
-        total_psnr = 0.0
-        total_ssim = 0.0
-        num_batches = len(self.val_loader)
-        
-        pbar = tqdm(self.val_loader, desc=f"Epoch {self.epoch+1} [Val]")
-        
+        total_psnr = total_ssim = 0.0
+
+        pbar = tqdm(self.val_loader, desc=f"Epoch {epoch + 1} [Val]")
         with torch.no_grad():
             for blurred, sharp in pbar:
-                blurred = blurred.to(self.device)
-                sharp = sharp.to(self.device)
-
+                blurred, sharp = blurred.to(self.device), sharp.to(self.device)
                 pred = self.model(blurred)
-
-                # Compute metrics correctly
                 psnr = self.psnr_metric(pred, sharp)
-                ssim = self.ssim_metric(pred, sharp)  # ✅ fixed call
-
+                ssim = self.ssim_metric(pred, sharp)
                 total_psnr += psnr
                 total_ssim += ssim
+                pbar.set_postfix(psnr=f"{psnr:.2f}", ssim=f"{ssim:.4f}")
 
-                # Update progress bar properly
-                pbar.set_postfix({
-                    'psnr': f'{psnr:.2f}',
-                    'ssim': f'{ssim:.4f}'
-                })
-        
-        avg_psnr = total_psnr / num_batches
-        avg_ssim = total_ssim / num_batches
-        
-        return {
-            'psnr': avg_psnr,
-            'ssim': avg_ssim
+        return {"psnr": total_psnr / len(self.val_loader), "ssim": total_ssim / len(self.val_loader)}
+
+    def save_checkpoint(self, filename="checkpoint.pth", is_best=False):
+        data = {
+            "model_state_dict": self.model.state_dict(),
+            "optimizer_state_dict": self.optimizer.state_dict(),
+            "scheduler_state_dict": self.scheduler.state_dict(),
+            "best_psnr": self.best_psnr,
         }
-    
-    def save_checkpoint(self, filename='checkpoint.pth', is_best=False):
-        """Save model checkpoint"""
-        checkpoint = {
-            'epoch': self.epoch,
-            'model_state_dict': self.model.state_dict(),
-            'optimizer_state_dict': self.optimizer.state_dict(),
-            'scheduler_state_dict': self.scheduler.state_dict(),  # NEW
-            'best_psnr': self.best_psnr
-        }
-        
-        filepath = self.save_dir / filename
-        torch.save(checkpoint, filepath)
-        
+        torch.save(data, self.save_dir / filename)
         if is_best:
-            best_path = self.save_dir / 'best_model.pth'
-            torch.save(checkpoint, best_path)
-    
-    def train(self, num_epochs):
-        """Main training loop"""
-        print(f"{'='*60}")
-        print(f"Starting Training: {num_epochs} epochs")
-        print(f"Target: 28-30 dB PSNR")
-        print(f"{'='*60}\n")
-        
-        start_time = time.time()
-        
-        for epoch in range(num_epochs):
-            self.epoch = epoch
-            
-            # Train
-            train_metrics = self.train_one_epoch()
-            
-            # Validate
-            val_metrics = self.validate()
-            
-            # NEW: Update learning rate based on validation PSNR
-            self.scheduler.step(val_metrics['psnr'])
-            current_lr = self.optimizer.param_groups[0]['lr']
-            
-            # Log to TensorBoard
-            self.writer.add_scalar('Loss/train', train_metrics['loss'], epoch)
-            self.writer.add_scalar('PSNR/train', train_metrics['psnr'], epoch)
-            self.writer.add_scalar('PSNR/val', val_metrics['psnr'], epoch)
-            self.writer.add_scalar('SSIM/val', val_metrics['ssim'], epoch)
-            self.writer.add_scalar('LR', current_lr, epoch)  # NEW
-            
-            # Print summary
-            print(f"\nEpoch {epoch+1}/{num_epochs} Summary:")
-            print(f"  Train Loss: {train_metrics['loss']:.4f}")
-            print(f"  Train PSNR: {train_metrics['psnr']:.2f} dB")
-            print(f"  Val PSNR:   {val_metrics['psnr']:.2f} dB")
-            print(f"  Val SSIM:   {val_metrics['ssim']:.4f}")
-            print(f"  LR:         {current_lr:.6f}")  # NEW
-            
-            # Check if best model
-            is_best = val_metrics['psnr'] > self.best_psnr
-            
+            torch.save(data, self.save_dir / "best_model.pth")
+
+    def train(self, epochs):
+        for epoch in range(epochs):
+            train_metrics = self.train_one_epoch(epoch)
+            val_metrics = self.validate(epoch)
+
+            self.scheduler.step(val_metrics["psnr"])
+            lr = self.optimizer.param_groups[0]["lr"]
+
+            self.writer.add_scalar("Loss/train", train_metrics["loss"], epoch)
+            self.writer.add_scalar("PSNR/val", val_metrics["psnr"], epoch)
+            self.writer.add_scalar("SSIM/val", val_metrics["ssim"], epoch)
+            self.writer.add_scalar("LR", lr, epoch)
+
+            print(f"\nEpoch {epoch+1}/{epochs}")
+            print(f"Train Loss: {train_metrics['loss']:.4f}, "
+                  f"Val PSNR: {val_metrics['psnr']:.2f}, "
+                  f"Val SSIM: {val_metrics['ssim']:.4f}, LR: {lr:.6f}")
+
+            is_best = val_metrics["psnr"] > self.best_psnr
             if is_best:
-                improvement = val_metrics['psnr'] - self.best_psnr
-                self.best_psnr = val_metrics['psnr']
+                improvement = val_metrics["psnr"] - self.best_psnr
+                self.best_psnr = val_metrics["psnr"]
                 self.epochs_no_improve = 0
-                print(f"  ✅ New best! PSNR: {self.best_psnr:.2f} dB (+{improvement:.2f} dB)")
-                self.save_checkpoint('best_model.pth', is_best=True)
+                print(f"✅ New best model: {self.best_psnr:.2f} dB (+{improvement:.2f})")
+                self.save_checkpoint(is_best=True)
             else:
                 self.epochs_no_improve += 1
-                print(f"  No improvement for {self.epochs_no_improve} epochs (best: {self.best_psnr:.2f} dB)")
-            
-            # Save periodic checkpoint
-            if (epoch + 1) % 10 == 0:
-                self.save_checkpoint(f'checkpoint_epoch_{epoch+1}.pth')
-            
-            # Early stopping
-            if self.epochs_no_improve >= self.patience:
-                print(f"\n⚠️ Early stopping! No improvement for {self.patience} epochs")
-                break
-            
-            print()
-        
-        # Save final model
-        self.save_checkpoint('last_model.pth')
-        
-        # Training complete
-        elapsed = time.time() - start_time
-        hours = int(elapsed // 3600)
-        minutes = int((elapsed % 3600) // 60)
-        
-        print(f"{'='*60}")
-        print(f"Training Complete!")
-        print(f"{'='*60}")
-        print(f"Time: {hours}h {minutes}m")
-        print(f"Best Validation PSNR: {self.best_psnr:.2f} dB")
-        print(f"Improvement from baseline: +{self.best_psnr - 23.89:.2f} dB")
-        print(f"Final model saved to: {self.save_dir}/best_model.pth")
-        print(f"{'='*60}\n")
-        
+                if self.epochs_no_improve >= self.patience:
+                    print("⚠️ Early stopping triggered.")
+                    break
+
+        print(f"\nTraining complete. Best PSNR: {self.best_psnr:.2f} dB")
+        self.save_checkpoint("final_model.pth")
         self.writer.close()
-        
+
+
 if __name__ == "__main__":
-    import sys
-    import os
-    from src.utils.config import Config
-    from src.data.dataset import create_dataloaders
-    from src.models.unet import UNet
-
-    # Suppress TensorFlow warnings (optional)
-    os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
-
-    print("=" * 60)
-    print("  IMAGE DEBLURRING TRAINER ENTRY POINT")
-    print("=" * 60)
-
-    # 1️⃣ Load config
-    config_path = "configs/config.yaml"
-    if not os.path.exists(config_path):
-        print(f"❌ Config file not found: {config_path}")
-        sys.exit(1)
-    config = Config(config_path)
-
-    # 2️⃣ Load dataset
-    print("\n[1/4] Loading dataset...")
-    train_sharp_dir = config.get('data.train_sharp', 'data/gopro/train/sharp')
-    train_blur_dir = config.get('data.train_blurred', 'data/gopro/train/blurred')
-    test_sharp_dir = config.get('data.test_sharp', 'data/gopro/test/sharp')
-    test_blur_dir = config.get('data.test_blurred', 'data/gopro/test/blurred')
-
+    config = Config("configs/config.yaml")
     train_loader, val_loader = create_dataloaders(
-        train_sharp_dir=train_sharp_dir,
-        train_blur_dir=train_blur_dir,
-        test_sharp_dir=test_sharp_dir,
-        test_blur_dir=test_blur_dir,
-        image_size=config.get('data.image_size', 384),
-        batch_size=config.get('data.batch_size', 4),
-        num_workers=config.get('data.num_workers', 4)
+        config.get("data.train_sharp"),
+        config.get("data.train_blurred"),
+        config.get("data.test_sharp"),
+        config.get("data.test_blurred"),
+        config.get("data.image_size"),
+        config.get("data.batch_size"),
+        config.get("data.num_workers"),
     )
 
-    print(f"  ✓ Loaded data:")
-    print(f"    Train loader: {len(train_loader)} batches")
-    print(f"    Val loader:   {len(val_loader)} batches")
-
-    # 3️⃣ Initialize model
-    print("\n[2/4] Initializing model...")
     model = UNet(in_channels=3, out_channels=3)
-    total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"  ✓ Model created with {total_params/1e6:.2f}M parameters")
-
-    # 4️⃣ Initialize trainer
-    print("\n[3/4] Setting up trainer...")
     trainer = Trainer(model, train_loader, val_loader, config)
-    print("  ✓ Trainer ready")
-
-    # 5️⃣ Start training loop
-    print("\n[4/4] Starting training loop...")
-    num_epochs = config.get('training.num_epochs', 100)
-    trainer.train(num_epochs)
-
-    print("\n🎯 Training finished successfully!")
-    print(f"Best model saved at: {trainer.save_dir / 'best_model.pth'}")
-    print("=" * 60)
+    trainer.train(config.get("training.num_epochs"))

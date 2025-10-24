@@ -1,154 +1,106 @@
-# src/models/unet.py
 """
-Improved U-Net for Image Deblurring
-
-Changes from original:
-- Added residual connections
-- Deeper (5 levels)
-- More channels in deeper layers
-- Better skip connections
-
-Expected: 28-30 dB PSNR
+U‑Net for Image Deblurring
+Resolution-preserving version — outputs same H×W as input.
 """
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
-class ResidualBlock(nn.Module):
-    """Residual block with skip connection"""
-    
-    def __init__(self, channels):
+# --------------------------
+# Building blocks
+# --------------------------
+
+class ConvBlock(nn.Module):
+    def __init__(self, in_ch, out_ch):
         super().__init__()
-        self.conv = nn.Sequential(
-            nn.Conv2d(channels, channels, 3, padding=1),
-            nn.BatchNorm2d(channels),
+        self.seq = nn.Sequential(
+            nn.Conv2d(in_ch, out_ch, 3, padding=1),
+            nn.BatchNorm2d(out_ch),
             nn.ReLU(inplace=True),
-            nn.Conv2d(channels, channels, 3, padding=1),
-            nn.BatchNorm2d(channels)
-        )
-        self.relu = nn.ReLU(inplace=True)
-    
-    def forward(self, x):
-        return self.relu(self.conv(x) + x)  # Residual connection
-
-
-class DoubleConv(nn.Module):
-    """Two convolutions with residual"""
-    
-    def __init__(self, in_channels, out_channels):
-        super().__init__()
-        self.conv = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, 3, padding=1),
-            nn.BatchNorm2d(out_channels),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(out_channels, out_channels, 3, padding=1),
-            nn.BatchNorm2d(out_channels),
+            nn.Conv2d(out_ch, out_ch, 3, padding=1),
+            nn.BatchNorm2d(out_ch),
             nn.ReLU(inplace=True)
         )
-        # Add residual block
-        self.residual = ResidualBlock(out_channels)
-    
     def forward(self, x):
-        x = self.conv(x)
-        x = self.residual(x)  # Extra residual for better learning
-        return x
+        return self.seq(x)
 
 
-class Down(nn.Module):
-    """Downsampling"""
-    
-    def __init__(self, in_channels, out_channels):
+class DownBlock(nn.Module):
+    def __init__(self, in_ch, out_ch):
         super().__init__()
-        self.pool_conv = nn.Sequential(
+        self.mpconv = nn.Sequential(
             nn.MaxPool2d(2),
-            DoubleConv(in_channels, out_channels)
+            ConvBlock(in_ch, out_ch)
         )
-    
     def forward(self, x):
-        return self.pool_conv(x)
+        return self.mpconv(x)
 
 
-class Up(nn.Module):
-    """Upsampling with skip connection"""
-    
-    def __init__(self, in_channels, out_channels):
+class UpBlock(nn.Module):
+    def __init__(self, in_ch, out_ch):
         super().__init__()
-        self.up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
-        self.conv = DoubleConv(in_channels, out_channels)
-    
+        self.up = nn.Upsample(scale_factor=2, mode="bilinear", align_corners=True)
+        self.conv = ConvBlock(in_ch, out_ch)
+
     def forward(self, x, skip):
         x = self.up(x)
+        # Fix potential off‑by‑1 pixel due to pooling rounding
+        if x.size(2) != skip.size(2) or x.size(3) != skip.size(3):
+            x = F.interpolate(x, size=skip.shape[2:], mode="bilinear", align_corners=True)
         x = torch.cat([x, skip], dim=1)
         return self.conv(x)
 
 
+# --------------------------
+# U-Net architecture
+# --------------------------
+
 class UNet(nn.Module):
-    """
-    Improved U-Net
-    
-    Changes:
-    - Residual blocks
-    - 5 encoder/decoder levels (was 4)
-    - More channels: 64→128→256→512→512
-    
-    Parameters: ~15M (was 7.8M)
-    """
-    
-    def __init__(self, in_channels=3, out_channels=3):
+    def __init__(self, in_channels=3, out_channels=3, base_channels=64):
         super().__init__()
-        
+
         # Encoder
-        self.input_conv = DoubleConv(in_channels, 64)
-        self.down1 = Down(64, 128)
-        self.down2 = Down(128, 256)
-        self.down3 = Down(256, 512)
-        self.down4 = Down(512, 512)  # NEW: Extra level
-        
-        # Bottleneck with extra residuals
-        self.bottleneck = nn.Sequential(
-            ResidualBlock(512),
-            ResidualBlock(512)  # NEW: Extra residual
-        )
-        
-        # Decoder
-        self.up4 = Up(1024, 512)  # NEW: Matches new encoder level
-        self.up3 = Up(1024, 256)
-        self.up2 = Up(512, 128)
-        self.up1 = Up(256, 64)
-        
-        # Output
-        self.output_conv = nn.Conv2d(64, out_channels, 1)
-    
-    def forward(self, x):
-        # Encoder with skip connections
-        x1 = self.input_conv(x)
-        x2 = self.down1(x1)
-        x3 = self.down2(x2)
-        x4 = self.down3(x3)
-        x5 = self.down4(x4)  # NEW
-        
+        self.inc = ConvBlock(in_channels, base_channels)
+        self.down1 = DownBlock(base_channels, base_channels * 2)
+        self.down2 = DownBlock(base_channels * 2, base_channels * 4)
+        self.down3 = DownBlock(base_channels * 4, base_channels * 8)
+
         # Bottleneck
-        b = self.bottleneck(x5)
-        
+        self.bridge = ConvBlock(base_channels * 8, base_channels * 16)
+
         # Decoder
-        d4 = self.up4(b, x5)  # NEW
-        d3 = self.up3(d4, x4)
+        self.up3 = UpBlock(base_channels * 16 + base_channels * 8, base_channels * 8)
+        self.up2 = UpBlock(base_channels * 8 + base_channels * 4, base_channels * 4)
+        self.up1 = UpBlock(base_channels * 4 + base_channels * 2, base_channels * 2)
+        self.up0 = UpBlock(base_channels * 2 + base_channels, base_channels)
+
+        # Output
+        self.outc = nn.Conv2d(base_channels, out_channels, kernel_size=1)
+
+    def forward(self, x):
+        # Encoder path
+        x1 = self.inc(x)       # -> 64
+        x2 = self.down1(x1)    # -> 128
+        x3 = self.down2(x2)    # -> 256
+        x4 = self.down3(x3)    # -> 512
+
+        # Bottleneck
+        b = self.bridge(x4)
+
+        # Decoder path (mirrors encoder)
+        d3 = self.up3(b, x4)
         d2 = self.up2(d3, x3)
         d1 = self.up1(d2, x2)
-        
-        # Output
-        out = self.output_conv(d1)
+        d0 = self.up0(d1, x1)
+
+        out = self.outc(d0)
         return torch.sigmoid(out)
 
 
-# Test
-if __name__ == '__main__':
+if __name__ == "__main__":
     model = UNet()
     x = torch.randn(1, 3, 384, 384)
     y = model(x)
-    
-    params = sum(p.numel() for p in model.parameters())
-    print(f"Parameters: {params:,} (~{params/1e6:.1f}M)")
-    print(f"Input: {x.shape}, Output: {y.shape}")
-    print(f"Output range: [{y.min():.3f}, {y.max():.3f}]")
+    print("Input:", x.shape, "Output:", y.shape)

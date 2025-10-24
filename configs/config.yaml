@@ -1,30 +1,34 @@
-# config.yaml - IMPROVED FOR 28-30 dB
+# Configuration for Image Deblurring Project - GoPro Version
+# Optimized for ~28–30 dB PSNR
 
-# Data paths
+project:
+  name: "Image Deblurring with GoPro"
+  version: "1.0.0"
+
+# Data configuration
 data:
   train_sharp: data/gopro/train/sharp
   train_blurred: data/gopro/train/blurred
   test_sharp: data/gopro/test/sharp
   test_blurred: data/gopro/test/blurred
-  
-  image_size: 384          # CHANGED: Larger patches for better context
-  batch_size: 4            # CHANGED: Reduced to fit 384px in memory
+
+  image_size: 384
+  batch_size: 4
   num_workers: 4
 
 # Model
 model:
   in_channels: 3
   out_channels: 3
-  base_channels: 64        # NEW: For deeper model
+  base_channels: 64
 
 # Training
 training:
-  num_epochs: 100          # CHANGED: More training time
-  learning_rate: 0.0002    # CHANGED: Slightly higher
-  patience: 20             # CHANGED: More patience before early stopping
+  num_epochs: 100
+  learning_rate: 0.0002
+  patience: 20
   save_dir: checkpoints
   log_dir: runs
-  
-  # NEW: Loss function weights
+
   loss_l1_weight: 0.8
   loss_perceptual_weight: 0.2
