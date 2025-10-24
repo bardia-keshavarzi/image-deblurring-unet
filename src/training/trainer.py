@@ -50,8 +50,7 @@ class Trainer:
             mode='max',  # Maximize PSNR
             factor=0.5,  # Reduce LR by half
             patience=5,  # After 5 epochs no improvement
-            verbose=True,
-            min_lr=1e-6
+            min_lr=1e-6,
         )
         
         # Loss and metrics
@@ -143,7 +142,7 @@ class Trainer:
                 pred = self.model(blurred)
                 
                 psnr = self.psnr_metric(pred, sharp)
-                ssim = self.ssim_metric(pred, sharp)
+                ssim = self.ssim_metric(pverbose=Truered, sharp)
                 
                 total_psnr += psnr
                 total_ssim += ssim
