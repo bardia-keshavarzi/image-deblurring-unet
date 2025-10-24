@@ -16,8 +16,8 @@ from pathlib import Path
 from tqdm import tqdm
 import time
 
-from .losses import get_loss_function
-from .metrics import PSNRMetric, SSIMMetric
+from src.training.losses import get_loss_function
+from src.training.metrics import PSNRMetric, SSIMMetric
 
 
 class Trainer:
