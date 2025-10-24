@@ -258,3 +258,65 @@ class Trainer:
         print(f"{'='*60}\n")
         
         self.writer.close()
+        
+if __name__ == "__main__":
+    import sys
+    import os
+    from src.utils.config import Config
+    from src.data.dataset import create_dataloaders
+    from src.models.unet import UNet
+
+    # Suppress TensorFlow warnings (optional)
+    os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+
+    print("=" * 60)
+    print("  IMAGE DEBLURRING TRAINER ENTRY POINT")
+    print("=" * 60)
+
+    # 1️⃣ Load config
+    config_path = "configs/config.yaml"
+    if not os.path.exists(config_path):
+        print(f"❌ Config file not found: {config_path}")
+        sys.exit(1)
+    config = Config(config_path)
+
+    # 2️⃣ Load dataset
+    print("\n[1/4] Loading dataset...")
+    train_sharp_dir = config.get('data.train_sharp', 'data/gopro/train/sharp')
+    train_blur_dir = config.get('data.train_blurred', 'data/gopro/train/blurred')
+    test_sharp_dir = config.get('data.test_sharp', 'data/gopro/test/sharp')
+    test_blur_dir = config.get('data.test_blurred', 'data/gopro/test/blurred')
+
+    train_loader, val_loader = create_dataloaders(
+        train_sharp_dir=train_sharp_dir,
+        train_blur_dir=train_blur_dir,
+        test_sharp_dir=test_sharp_dir,
+        test_blur_dir=test_blur_dir,
+        image_size=config.get('data.image_size', 384),
+        batch_size=config.get('data.batch_size', 4),
+        num_workers=config.get('data.num_workers', 4)
+    )
+
+    print(f"  ✓ Loaded data:")
+    print(f"    Train loader: {len(train_loader)} batches")
+    print(f"    Val loader:   {len(val_loader)} batches")
+
+    # 3️⃣ Initialize model
+    print("\n[2/4] Initializing model...")
+    model = UNet(in_channels=3, out_channels=3)
+    total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"  ✓ Model created with {total_params/1e6:.2f}M parameters")
+
+    # 4️⃣ Initialize trainer
+    print("\n[3/4] Setting up trainer...")
+    trainer = Trainer(model, train_loader, val_loader, config)
+    print("  ✓ Trainer ready")
+
+    # 5️⃣ Start training loop
+    print("\n[4/4] Starting training loop...")
+    num_epochs = config.get('training.num_epochs', 100)
+    trainer.train(num_epochs)
+
+    print("\n🎯 Training finished successfully!")
+    print(f"Best model saved at: {trainer.save_dir / 'best_model.pth'}")
+    print("=" * 60)
