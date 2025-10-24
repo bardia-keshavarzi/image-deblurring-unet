@@ -1,63 +1,73 @@
-# src/training/losses.py
 """
-Loss Functions - IMPROVED
-
-Adds perceptual loss for better visual quality
+Loss functions for Image Deblurring
+Includes combined L1 + Perceptual loss with safe device placement
 """
 
 import torch
 import torch.nn as nn
-import torchvision.models as models
+import torch.nn.functional as F
+from torchvision.models import vgg16
 
+
+# -----------------------
+# Perceptual (VGG‑based)
+# -----------------------
 
 class PerceptualLoss(nn.Module):
-    """VGG-based perceptual loss"""
-    
-    def __init__(self):
+    def __init__(self, layer_ids=[3, 8, 15], weights=None):
         super().__init__()
-        
-        # Use VGG16 features (pretrained)
-        vgg = models.vgg16(pretrained=True).features[:16]  # Up to relu3_3
-        self.vgg = vgg.eval()
-        
-        # Freeze VGG
-        for param in self.vgg.parameters():
-            param.requires_grad = False
-        
-        # Normalization
-        self.register_buffer('mean', torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1))
-        self.register_buffer('std', torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1))
-        
-        self.l1 = nn.L1Loss()
-    
-    def forward(self, pred, target):
-        # Normalize
-        pred_norm = (pred - self.mean) / self.std
-        target_norm = (target - self.mean) / self.std
-        
-        # Extract features
-        pred_features = self.vgg(pred_norm)
-        target_features = self.vgg(target_norm)
-        
-        return self.l1(pred_features, target_features)
+        vgg = vgg16(weights='IMAGENET1K_V1').features.eval()
+        self.vgg_layers = nn.Sequential(*list(vgg.children())[:max(layer_ids) + 1])
+        for p in self.vgg_layers.parameters():
+            p.requires_grad = False
 
+        self.layer_ids = layer_ids
+        self.weights = weights if weights is not None else [1.0] * len(layer_ids)
+
+        # Normalization constants (will move to same device later)
+        self.register_buffer("mean", torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1))
+        self.register_buffer("std", torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1))
+
+    def forward(self, pred, target):
+        # Ensure mean/std are on the same device
+        mean, std = self.mean.to(pred.device), self.std.to(pred.device)
+
+        pred_norm = (pred - mean) / std
+        target_norm = (target - mean) / std
+
+        loss = 0.0
+        x, y = pred_norm, target_norm
+
+        for i, layer in enumerate(self.vgg_layers):
+            x = layer(x)
+            y = layer(y)
+            if i in self.layer_ids:
+                loss += self.weights[self.layer_ids.index(i)] * F.l1_loss(x, y)
+
+        return loss
+
+
+# -----------------------
+# Combined Loss
+# -----------------------
 
 class CombinedLoss(nn.Module):
-    """L1 + Perceptual Loss"""
-    
-    def __init__(self, alpha=0.8, beta=0.2):
+    def __init__(self, l1_weight=0.8, perceptual_weight=0.2):
         super().__init__()
-        self.alpha = alpha
-        self.beta = beta
+        self.l1_weight = l1_weight
+        self.perceptual_weight = perceptual_weight
         self.l1 = nn.L1Loss()
         self.perceptual = PerceptualLoss()
-    
+
     def forward(self, pred, target):
         l1_loss = self.l1(pred, target)
         perceptual_loss = self.perceptual(pred, target)
-        return self.alpha * l1_loss + self.beta * perceptual_loss
+        return self.l1_weight * l1_loss + self.perceptual_weight * perceptual_loss
 
+
+# -----------------------
+# Factory Method
+# -----------------------
 
 def get_loss_function():
-    """Get combined loss function"""
-    return CombinedLoss(alpha=0.8, beta=0.2)
+    return CombinedLoss()
