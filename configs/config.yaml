@@ -13,8 +13,8 @@ data:
   test_blurred: data/gopro/test/blurred
 
   image_size: 512
-  batch_size: 4
-  num_workers: 4
+  batch_size: 8
+  num_workers: 6
 
 # Model
 model:
