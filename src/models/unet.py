@@ -1,6 +1,6 @@
 """
 Multi-Scale Residual U-Net with CBAM Attention
-Targets 27-29 dB PSNR on GoPro dataset
+Corrected for use_attn naming
 """
 
 import torch
@@ -8,9 +8,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-# ========================================
-# CBAM Attention Module
-# ========================================
+# ===========================================================
+# CBAM Attention Blocks
+# ===========================================================
 class ChannelAttention(nn.Module):
     def __init__(self, channels, reduction=16):
         super().__init__()
@@ -24,9 +24,9 @@ class ChannelAttention(nn.Module):
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
-        avg_out = self.fc(self.avg_pool(x))
-        max_out = self.fc(self.max_pool(x))
-        return self.sigmoid(avg_out + max_out) * x
+        avg = self.fc(self.avg_pool(x))
+        max_ = self.fc(self.max_pool(x))
+        return self.sigmoid(avg + max_) * x
 
 
 class SpatialAttention(nn.Module):
@@ -36,10 +36,10 @@ class SpatialAttention(nn.Module):
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
-        avg_out = torch.mean(x, dim=1, keepdim=True)
-        max_out, _ = torch.max(x, dim=1, keepdim=True)
-        attn = torch.cat([avg_out, max_out], dim=1)
-        return self.sigmoid(self.conv(attn)) * x
+        avg = torch.mean(x, dim=1, keepdim=True)
+        max_, _ = torch.max(x, dim=1, keepdim=True)
+        out = torch.cat([avg, max_], dim=1)
+        return self.sigmoid(self.conv(out)) * x
 
 
 class CBAMBlock(nn.Module):
@@ -49,14 +49,12 @@ class CBAMBlock(nn.Module):
         self.sa = SpatialAttention()
 
     def forward(self, x):
-        x = self.ca(x)
-        x = self.sa(x)
-        return x
+        return self.sa(self.ca(x))
 
 
-# ========================================
-# Residual Convolution Block
-# ========================================
+# ===========================================================
+# Residual Conv Block
+# ===========================================================
 class ResBlock(nn.Module):
     def __init__(self, in_ch, out_ch, use_attn=False):
         super().__init__()
@@ -68,16 +66,16 @@ class ResBlock(nn.Module):
         self.attn = CBAMBlock(out_ch) if use_attn else nn.Identity()
 
     def forward(self, x):
-        identity = self.res(x)
+        ident = self.res(x)
         out = F.relu(self.bn1(self.conv1(x)), inplace=True)
         out = self.bn2(self.conv2(out))
-        out = self.attn(out + identity)
+        out = self.attn(out + ident)
         return F.relu(out, inplace=True)
 
 
-# ========================================
+# ===========================================================
 # Encoder / Decoder Blocks
-# ========================================
+# ===========================================================
 class DownBlock(nn.Module):
     def __init__(self, in_ch, out_ch, use_attn=False):
         super().__init__()
@@ -98,56 +96,50 @@ class UpBlock(nn.Module):
         x = self.up(x)
         if x.shape[-2:] != skip.shape[-2:]:
             x = F.interpolate(x, size=skip.shape[-2:], mode='bilinear', align_corners=True)
-        x = torch.cat([x, skip], dim=1)
-        return self.conv(x)
+        return self.conv(torch.cat([x, skip], dim=1))
 
 
-# ========================================
-# Multi-Scale U-Net
-# ========================================
+# ===========================================================
+# Multi-Scale Residual U-Net
+# ===========================================================
 class UNet(nn.Module):
     def __init__(self, in_channels=3, out_channels=3, base=64, use_attention=True):
         super().__init__()
-        
+
         # Encoder
-        self.inc = ResBlock(in_channels, base, use_attention)
-        self.down1 = DownBlock(base, base * 2, use_attention)
-        self.down2 = DownBlock(base * 2, base * 4, use_attention)
-        self.down3 = DownBlock(base * 4, base * 8, use_attention)
-        self.down4 = DownBlock(base * 8, base * 16, use_attention)  # Extra depth
-        
-        # Bridge with CBAM
+        self.inc = ResBlock(in_channels, base, use_attn=use_attention)
+        self.down1 = DownBlock(base, base * 2, use_attn=use_attention)
+        self.down2 = DownBlock(base * 2, base * 4, use_attn=use_attention)
+        self.down3 = DownBlock(base * 4, base * 8, use_attn=use_attention)
+        self.down4 = DownBlock(base * 8, base * 16, use_attn=use_attention)
+
+        # Bridge
         self.bridge = nn.Sequential(
-            ResBlock(base * 16, base * 32, use_attention=True),
+            ResBlock(base * 16, base * 32, use_attn=True),
             CBAMBlock(base * 32)
         )
-        
+
         # Decoder
-        self.up4 = UpBlock(base * 32 + base * 16, base * 16, use_attention)
-        self.up3 = UpBlock(base * 16 + base * 8, base * 8, use_attention)
-        self.up2 = UpBlock(base * 8 + base * 4, base * 4, use_attention)
-        self.up1 = UpBlock(base * 4 + base * 2, base * 2, use_attention)
-        self.up0 = UpBlock(base * 2 + base, base, use_attention)
-        
-        # Output head
+        self.up4 = UpBlock(base * 32 + base * 16, base * 16, use_attn=use_attention)
+        self.up3 = UpBlock(base * 16 + base * 8, base * 8, use_attn=use_attention)
+        self.up2 = UpBlock(base * 8 + base * 4, base * 4, use_attn=use_attention)
+        self.up1 = UpBlock(base * 4 + base * 2, base * 2, use_attn=use_attention)
+        self.up0 = UpBlock(base * 2 + base, base, use_attn=use_attention)
+
         self.outc = nn.Conv2d(base, out_channels, 1)
 
     def forward(self, x):
-        # Encoder path
         x1 = self.inc(x)
         x2 = self.down1(x1)
         x3 = self.down2(x2)
         x4 = self.down3(x3)
         x5 = self.down4(x4)
-        
-        # Bridge
+
         b = self.bridge(x5)
-        
-        # Decoder path
+
         d4 = self.up4(b, x5)
         d3 = self.up3(d4, x4)
         d2 = self.up2(d3, x3)
         d1 = self.up1(d2, x2)
         d0 = self.up0(d1, x1)
-        
         return torch.sigmoid(self.outc(d0))
