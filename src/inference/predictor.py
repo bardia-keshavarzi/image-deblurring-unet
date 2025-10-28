@@ -1,7 +1,6 @@
 # src/inference/predictor.py
 """
 Simple inference for trained U-Net model
-
 Usage:
     predictor = DeblurPredictor('checkpoints/best_model.pth')
     deblurred = predictor.predict(blurred_image)
@@ -16,7 +15,6 @@ import cv2
 class DeblurPredictor:
     """
     Load trained U-Net and deblur images
-    
     Simple, minimal version for 8-week project
     """
     
@@ -33,22 +31,31 @@ class DeblurPredictor:
         self.device = torch.device(device if torch.cuda.is_available() else 'cpu')
         
         # Load model
-        self.model = UNet(in_channels=3, out_channels=3)
+        self.model = UNet(in_channels=3, out_channels=3, use_attention=True)
         
         # Load checkpoint
         checkpoint = torch.load(model_path, map_location=self.device)
         
         # Handle different checkpoint formats
-        if 'model_state_dict' in checkpoint:
-            self.model.load_state_dict(checkpoint['model_state_dict'])
-            print(f"✓ Loaded model from epoch {checkpoint.get('epoch', 'unknown')}")
-            print(f"  Best PSNR: {checkpoint.get('best_psnr', 'unknown'):.2f} dB")
+        if isinstance(checkpoint, dict):
+            # Check for nested model_state key
+            if 'model_state' in checkpoint:
+                self.model.load_state_dict(checkpoint['model_state'])
+                print(f"✓ Loaded model from epoch {checkpoint.get('epoch', 'unknown')}")
+                print(f"  Best PSNR: {checkpoint.get('best_psnr', 'unknown'):.2f} dB")
+            elif 'model_state_dict' in checkpoint:
+                self.model.load_state_dict(checkpoint['model_state_dict'])
+                print(f"✓ Loaded model from epoch {checkpoint.get('epoch', 'unknown')}")
+                print(f"  Best PSNR: {checkpoint.get('best_psnr', 'unknown'):.2f} dB")
+            else:
+                # Assume it's the raw state_dict
+                self.model.load_state_dict(checkpoint)
         else:
+            # Direct state_dict (old format)
             self.model.load_state_dict(checkpoint)
         
         self.model = self.model.to(self.device)
         self.model.eval()
-        
         print(f"✓ Model loaded on {self.device}")
     
     def predict(self, blurred_image: np.ndarray) -> np.ndarray:
