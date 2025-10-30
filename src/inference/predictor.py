@@ -154,6 +154,50 @@ class DeblurPredictor:
         cv2.imwrite(output_path, deblurred_bgr)
         print(f"✓ Saved: {output_path}")
 
+    def predict_tta(self, blurred_image: np.ndarray, num_augs: int = 4) -> np.ndarray:
+        """
+        Predict with test-time augmentation for better quality
+        
+        Args:
+            blurred_image: Input (H, W, 3) RGB uint8
+            num_augs: Number of augmentations (4 or 8 recommended)
+        
+        Returns:
+            Deblurred image (H, W, 3) RGB uint8
+        """
+        predictions = []
+        
+        # Original
+        predictions.append(self.predict(blurred_image))
+        
+        if num_augs >= 2:
+            # Horizontal flip
+            flipped_h = np.fliplr(blurred_image)
+            pred_h = self.predict(flipped_h)
+            predictions.append(np.fliplr(pred_h))
+        
+        if num_augs >= 4:
+            # Vertical flip
+            flipped_v = np.flipud(blurred_image)
+            pred_v = self.predict(flipped_v)
+            predictions.append(np.flipud(pred_v))
+            
+            # Both flips
+            flipped_hv = np.flipud(np.fliplr(blurred_image))
+            pred_hv = self.predict(flipped_hv)
+            predictions.append(np.flipud(np.fliplr(pred_hv)))
+        
+        if num_augs >= 8:
+            # 90° rotations
+            for k in [1, 2, 3]:  # 90°, 180°, 270°
+                rotated = np.rot90(blurred_image, k)
+                pred_rot = self.predict(rotated)
+                predictions.append(np.rot90(pred_rot, -k))
+        
+        # Average all predictions
+        result = np.mean(predictions, axis=0).astype(np.uint8)
+        return result    
+
 
 # Test
 if __name__ == '__main__':

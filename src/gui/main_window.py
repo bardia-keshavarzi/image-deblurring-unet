@@ -194,7 +194,7 @@ class DeblurWindow(QMainWindow):
             
             # Process image
             print("Processing image...")
-            self.output_image = self.predictor.predict(self.input_image)
+            self.output_image = self.predictor.predict_tta(self.input_image)
             print(f"Output range: [{self.output_image.min()}, {self.output_image.max()}]")
             
             # Display result
