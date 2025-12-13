@@ -9,22 +9,15 @@ class Config:
         self._config = self._load_config()
     
     def _load_config(self):
-        """Load YAML file"""
+        """Load YAML file and parse to python object"""
         with open(self.config_path, 'r') as f:
             return yaml.safe_load(f)
 
     def get(self, key, default=None):
-        """
-        Get config value using dot notation
-        
-        Example:
-            config.get('traditional.unsharp_mask.sigma')
-            Returns: 1.0
-        """
         keys = key.split('.')  # Split "traditional.wiener.noise" into ["traditional", "wiener", "noise"]
         value = self._config
         
-        # Navigate through nested dictionaries
+
         for k in keys:
             if isinstance(value, dict) and k in value:
                 value = value[k]
