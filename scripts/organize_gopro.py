@@ -1,6 +1,26 @@
 # scripts/organize_gopro.py
 """Organize GoPro dataset into flat structure"""
+"""
+GOPRO_Large/
+  train/
+    GOPRxxxx_xx_xx/          # a scene/sequence folder
+      blur/
+        000001.png
+        000002.png
+        ...
+      sharp/
+        000001.png
+        000002.png
+        ...
+    GOPRyyyy_yy_yy/
+      blur/...
+      sharp/...
+  test/
+    GOPRzzzz_zz_zz/
+      blur/...
+      sharp/...
 
+"""
 import shutil
 from pathlib import Path
 import argparse
