@@ -38,17 +38,17 @@ class DeblurTransforms:
                 max_pixel_value=255.0
             ),
             
-            ToTensorV2()
+            ToTensorV2() # numpy array to pytorch tensor hwc to chw
         ], 
         additional_targets={'sharp': 'image'}
         )
     
     def _build_val_transforms(self) -> A.Compose:
-        """Build validation transforms - MUST USE SAME NORMALIZATION!"""
+
         return A.Compose([
             A.Resize(self.image_size, self.image_size),
             
-            # FIXED: Use SAME normalization as training!
+
             A.Normalize(
                 mean=(0.0, 0.0, 0.0),  
                 std=(1.0, 1.0, 1.0),    
@@ -65,6 +65,6 @@ class DeblurTransforms:
         transformed = self.transform(image=blurred, sharp=sharp)
         
         return {
-            'blurred': transformed['image'],
+            'blurred': transformed['image'], #tensor
             'sharp': transformed['sharp']
         }

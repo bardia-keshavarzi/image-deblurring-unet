@@ -40,10 +40,10 @@ class DeblurDataset(Dataset):
         print(f"  Image size:  {image_size}")
         print(f"  Augment:     {augment}")
 
-    def __len__(self):
+    def __len__(self):   # how many batch to produce
         return len(self.sharp_paths)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx): # fetch sample from datasets how pytorch fetch data
         sharp_img = self._load_image(self.sharp_paths[idx])
         blurred_img = self._load_image(self.blurred_paths[idx])
         transformed = self.transforms(blurred_img, sharp_img)
@@ -109,7 +109,7 @@ def create_dataloaders(
     print(f"  Batch size: {batch_size}")
     return train_loader, val_loader
 
-
+############################## test ########################################
 if __name__ == "__main__":
     print("Testing GoPro dataset loading...")
 
