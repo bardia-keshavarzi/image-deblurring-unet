@@ -3,10 +3,9 @@
 Models for Image Deblurring
 """
 
-from .traditional import TraditionalDeblurrer
+
 from .unet import UNet
 
 __all__ = [
-    'TraditionalDeblurrer',
     'UNet'
 ]
