@@ -30,7 +30,7 @@ class DeblurWindow(QMainWindow):
         """Initialize user interface"""
         
         # Window settings
-        self.setWindowTitle("Image Deblurring - Week 4 Demo")
+        self.setWindowTitle("Image Deblurring -bardia_keshavarzi")
         self.setGeometry(100, 100, 1000, 600)
         
         # Central widget
