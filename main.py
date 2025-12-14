@@ -28,7 +28,7 @@ def main():
     
     # Set application info
     app.setApplicationName("Image Deblurring")
-    app.setOrganizationName("Week 4 Project")
+    app.setOrganizationName("bardia_keshavarzi")
     
     # Create and show main window
     window = DeblurWindow()
