@@ -102,7 +102,7 @@ class DeblurWindow(QMainWindow):
         self.status_bar.showMessage("Ready")
     
     def _load_model(self):
-        """Load trained U-Net model - FIXED VERSION"""
+
         try:
             from src.inference.predictor import DeblurPredictor
             
