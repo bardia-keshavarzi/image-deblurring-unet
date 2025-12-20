@@ -69,9 +69,9 @@ def organize_gopro(input_dir, output_dir):
                 shutil.copy2(sharp_img, sharp_out / new_name)
                 count += 1
         
-        print(f"✓ Copied {count} pairs")
+        print(f"Copied {count} pairs")
     
-    print("\nDone! Dataset ready at:", output_dir)
+    print("\nDataset ready at:", output_dir)
 
 
 if __name__ == '__main__':
