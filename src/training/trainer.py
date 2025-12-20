@@ -1,12 +1,3 @@
-"""
-Trainer – Optimized version
-Improvements:
-- Mixed precision (AMP)
-- CosineAnnealing learning rate schedule
-- Early stopping + better PSNR-based control
-- Seamless support for Residual/Attention U-Net
-"""
-
 import torch
 from torch.utils.tensorboard import SummaryWriter
 from torch.optim.lr_scheduler import CosineAnnealingLR
@@ -45,7 +36,7 @@ class Trainer:
         self.best_psnr = 0.0
         self.epochs_no_improve = 0
         self.patience = config.get("training.patience", 20)
-        print(f"✓ Trainer initialized on {self.device}")
+        print(f"Trainer initialized on {self.device}")
 
     # ----------------------------------------------------------
     # One epoch of training
@@ -58,7 +49,7 @@ class Trainer:
         for blurred, sharp in pbar:
             blurred, sharp = blurred.to(self.device), sharp.to(self.device)
 
-            with torch.cuda.amp.autocast():  # AMP context
+            with torch.cuda.amp.autocast(): 
                 pred = self.model(blurred)
                 loss = self.criterion(pred, sharp)
 
@@ -120,7 +111,7 @@ class Trainer:
             start_time = time.time()
             train_metrics = self.train_one_epoch(epoch)
             val_metrics = self.validate(epoch)
-            self.scheduler.step()  # updates LR each epoch
+            self.scheduler.step()
             lr = self.optimizer.param_groups[0]["lr"]
 
             self.writer.add_scalar("Loss/train", train_metrics["loss"], epoch)
@@ -133,20 +124,20 @@ class Trainer:
                   f"Val PSNR: {val_metrics['psnr']:.2f}, "
                   f"Val SSIM: {val_metrics['ssim']:.4f}, LR: {lr:.6f}")
 
-            # Early stopping and checkpointing
+
             if val_metrics["psnr"] > self.best_psnr:
                 improvement = val_metrics["psnr"] - self.best_psnr
                 self.best_psnr = val_metrics["psnr"]
                 self.epochs_no_improve = 0
-                print(f"✅ New best model: {self.best_psnr:.2f} dB (+{improvement:.2f})")
+                print(f"New best model: {self.best_psnr:.2f} dB (+{improvement:.2f})")
                 self.save_checkpoint(is_best=True)
             else:
                 self.epochs_no_improve += 1
                 if self.epochs_no_improve >= self.patience:
-                    print("⚠️ Early stopping triggered.")
+                    print("Early stopping triggered.")
                     break
 
-            print(f"⏱️ Epoch duration: {(time.time() - start_time)/60:.2f} min\n")
+            print(f"Epoch duration: {(time.time() - start_time)/60:.2f} min\n")
 
         print(f"Training complete. Best PSNR: {self.best_psnr:.2f} dB")
         self.save_checkpoint("final_model.pth")
