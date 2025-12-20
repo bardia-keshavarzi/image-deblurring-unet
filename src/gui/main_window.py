@@ -1,8 +1,3 @@
-# src/gui/main_window.py
-"""
-Main GUI Window - FIXED VERSION
-"""
-
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QFileDialog, QMessageBox, QStatusBar
