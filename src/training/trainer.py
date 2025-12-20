@@ -38,9 +38,7 @@ class Trainer:
         self.patience = config.get("training.patience", 20)
         print(f"Trainer initialized on {self.device}")
 
-    # ----------------------------------------------------------
-    # One epoch of training
-    # ----------------------------------------------------------
+
     def train_one_epoch(self, epoch):
         self.model.train()
         total_loss, total_psnr = 0.0, 0.0
@@ -67,9 +65,7 @@ class Trainer:
         return {"loss": total_loss / len(self.train_loader),
                 "psnr": total_psnr / len(self.train_loader)}
 
-    # ----------------------------------------------------------
-    # Validation Step
-    # ----------------------------------------------------------
+
     def validate(self, epoch):
         self.model.eval()
         total_psnr, total_ssim = 0.0, 0.0
@@ -89,9 +85,6 @@ class Trainer:
         return {"psnr": total_psnr / len(self.val_loader),
                 "ssim": total_ssim / len(self.val_loader)}
 
-    # ----------------------------------------------------------
-    # Save model
-    # ----------------------------------------------------------
     def save_checkpoint(self, filename="checkpoint.pth", is_best=False):
         state = {
             "model_state": self.model.state_dict(),
@@ -103,9 +96,7 @@ class Trainer:
         if is_best:
             torch.save(state, self.save_dir / "best_model.pth")
 
-    # ----------------------------------------------------------
-    # Full training loop
-    # ----------------------------------------------------------
+
     def train(self, epochs):
         for epoch in range(epochs):
             start_time = time.time()
