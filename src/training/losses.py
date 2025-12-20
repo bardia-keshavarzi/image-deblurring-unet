@@ -1,15 +1,9 @@
-
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torchmetrics.functional import structural_similarity_index_measure as ssim
 
 
-
-# --------------------------------------------------
-# Gradient (Edge) Loss
-# --------------------------------------------------
 def gradient_loss(pred, target):
     gx_pred = pred[:, :, :, :-1] - pred[:, :, :, 1:]
     gy_pred = pred[:, :, :-1, :] - pred[:, :, 1:, :]
@@ -18,9 +12,6 @@ def gradient_loss(pred, target):
     return F.l1_loss(gx_pred, gx_targ) + F.l1_loss(gy_pred, gy_targ)
 
 
-# --------------------------------------------------
-# Combined Weighted Loss
-# --------------------------------------------------
 class CombinedLoss(nn.Module):
     def __init__(self, l1_w=0.6, ssim_w=0.1, grad_w=0.05):
         super().__init__()
@@ -48,5 +39,4 @@ class CombinedLoss(nn.Module):
 
 
 def get_loss_function():
-    """Factory for trainer.py"""
     return CombinedLoss()

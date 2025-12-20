@@ -173,13 +173,13 @@ class DeblurWindow(QMainWindow):
             self.output_display.setText("Click 'Deblur!' to process")
             self.btn_save.setEnabled(False)
             
-            self.status_bar.showMessage(f"✓ Loaded: {Path(file_path).name}")
+            self.status_bar.showMessage(f"Loaded: {Path(file_path).name}")
             
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to load image:\n{str(e)}")
     
     def _on_deblur_clicked(self):
-        """Handle Deblur button click"""
+
         
         if self.input_image is None:
             return
@@ -189,7 +189,7 @@ class DeblurWindow(QMainWindow):
             return
         
         try:
-            self.status_bar.showMessage("⏳ Deblurring...")
+            self.status_bar.showMessage("Deblurring...")
             self.btn_deblur.setEnabled(False)
             
             # Process image
@@ -204,18 +204,18 @@ class DeblurWindow(QMainWindow):
             self.btn_save.setEnabled(True)
             self.btn_deblur.setEnabled(True)
             
-            self.status_bar.showMessage("✓ Deblurring complete!")
+            self.status_bar.showMessage("Deblurring complete!")
             
         except Exception as e:
             import traceback
-            print(f"❌ Deblurring error:")
+            print(f"Deblurring error:")
             print(traceback.format_exc())
             QMessageBox.critical(self, "Error", f"Deblurring failed:\n{str(e)}")
             self.btn_deblur.setEnabled(True)
-            self.status_bar.showMessage("❌ Deblurring failed")
+            self.status_bar.showMessage("Deblurring failed")
     
     def _on_save_clicked(self):
-        """Handle Save button click"""
+
         
         if self.output_image is None:
             return
@@ -234,7 +234,7 @@ class DeblurWindow(QMainWindow):
         try:
             import cv2
             
-            # Convert RGB to BGR for saving
+
             img_bgr = cv2.cvtColor(self.output_image, cv2.COLOR_RGB2BGR)
             cv2.imwrite(file_path, img_bgr)
             
@@ -247,20 +247,20 @@ class DeblurWindow(QMainWindow):
     def _display_image(self, image_rgb, label_widget):
         """Display numpy image in QLabel"""
         
-        # Ensure uint8 type
+
         if image_rgb.dtype != np.uint8:
             if image_rgb.max() <= 1.0:
                 image_rgb = (image_rgb * 255).astype(np.uint8)
             else:
                 image_rgb = image_rgb.astype(np.uint8)
         
-        # Make C-contiguous
+
         image_rgb = np.ascontiguousarray(image_rgb)
         
         h, w, ch = image_rgb.shape
         bytes_per_line = ch * w
         
-        # Create QImage
+
         q_image = QImage(
             image_rgb.data,
             w, h,
@@ -268,10 +268,10 @@ class DeblurWindow(QMainWindow):
             QImage.Format_RGB888
         )
         
-        # Copy to prevent memory issues
+
         q_image = q_image.copy()
         
-        # Convert to pixmap and scale
+
         pixmap = QPixmap.fromImage(q_image)
         scaled_pixmap = pixmap.scaled(
             label_widget.width() - 20,
@@ -284,7 +284,7 @@ class DeblurWindow(QMainWindow):
 
 
 def main():
-    """Run the application"""
+
     import sys
     from PySide6.QtWidgets import QApplication
     

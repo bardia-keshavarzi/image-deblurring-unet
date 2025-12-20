@@ -1,7 +1,3 @@
-"""
-Simplified PyTorch Dataset for GoPro Dataset
-Ensures sharp and blurred images are perfectly matched
-"""
 
 import torch
 from torch.utils.data import Dataset, DataLoader
@@ -20,7 +16,7 @@ class DeblurDataset(Dataset):
         image_size: int = 256,
         augment: bool = True,
     ):
-        # Match filenames safely
+
         sharp_files = {p.name: p for p in sharp_paths}
         blur_files = {p.name: p for p in blurred_paths}
         common = sorted(list(sharp_files.keys() & blur_files.keys()))
@@ -40,10 +36,10 @@ class DeblurDataset(Dataset):
         print(f"  Image size:  {image_size}")
         print(f"  Augment:     {augment}")
 
-    def __len__(self):   # how many batch to produce
+    def __len__(self):   
         return len(self.sharp_paths)
 
-    def __getitem__(self, idx): # fetch sample from datasets how pytorch fetch data
+    def __getitem__(self, idx): 
         sharp_img = self._load_image(self.sharp_paths[idx])
         blurred_img = self._load_image(self.blurred_paths[idx])
         transformed = self.transforms(blurred_img, sharp_img)
@@ -59,7 +55,6 @@ class DeblurDataset(Dataset):
 
 
 def _load_image_paths(folder: str) -> List[Path]:
-    """Load all images from given folder with safe matching extensions."""
     exts = ["*.png", "*.jpg", "*.jpeg"]
     files = []
     for ext in exts:
@@ -118,4 +113,4 @@ if __name__ == "__main__":
 
     train_loader, _ = create_dataloaders(gopro_train_sharp, gopro_train_blur, gopro_train_sharp, gopro_train_blur)
     blurred, sharp = next(iter(train_loader))
-    print(f"✓ Batch loaded successfully: {blurred.shape}, {sharp.shape}")
+    print(f"Batch loaded successfully: {blurred.shape}, {sharp.shape}")

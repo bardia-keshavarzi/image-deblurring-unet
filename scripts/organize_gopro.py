@@ -1,5 +1,4 @@
-# scripts/organize_gopro.py
-"""Organize GoPro dataset into flat structure"""
+
 """
 GOPRO_Large/
   train/

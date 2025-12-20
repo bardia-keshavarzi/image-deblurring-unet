@@ -1,16 +1,8 @@
-"""
-Multi-Scale Residual U-Net with CBAM Attention
-Corrected for use_attn naming
-"""
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 
-# ===========================================================
-# CBAM Attention Blocks
-# ===========================================================
 class ChannelAttention(nn.Module):
     def __init__(self, channels, reduction=16):
         super().__init__()
@@ -52,9 +44,6 @@ class CBAMBlock(nn.Module):
         return self.sa(self.ca(x))
 
 
-# ===========================================================
-# Residual Conv Block
-# ===========================================================
 class ResBlock(nn.Module):
     def __init__(self, in_ch, out_ch, use_attn=False):
         super().__init__()
@@ -73,9 +62,7 @@ class ResBlock(nn.Module):
         return F.relu(out, inplace=True)
 
 
-# ===========================================================
-# Encoder / Decoder Blocks
-# ===========================================================
+
 class DownBlock(nn.Module):
     def __init__(self, in_ch, out_ch, use_attn=False):
         super().__init__()
