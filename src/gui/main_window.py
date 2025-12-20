@@ -44,16 +44,16 @@ class DeblurWindow(QMainWindow):
         # Buttons at top
         button_layout = QHBoxLayout()
         
-        self.btn_load = QPushButton("📁 Load Image")
+        self.btn_load = QPushButton("Load Image")
         self.btn_load.clicked.connect(self._on_load_clicked)
         button_layout.addWidget(self.btn_load)
         
-        self.btn_deblur = QPushButton("✨ Deblur!")
+        self.btn_deblur = QPushButton("Deblur!")
         self.btn_deblur.clicked.connect(self._on_deblur_clicked)
         self.btn_deblur.setEnabled(False)
         button_layout.addWidget(self.btn_deblur)
         
-        self.btn_save = QPushButton("💾 Save Result")
+        self.btn_save = QPushButton("Save Result")
         self.btn_save.clicked.connect(self._on_save_clicked)
         self.btn_save.setEnabled(False)
         button_layout.addWidget(self.btn_save)
@@ -119,28 +119,28 @@ class DeblurWindow(QMainWindow):
                     f"Model not found!\n\n"
                     f"Looking at:\n{model_path.absolute()}\n\n"
                     f"Please ensure:\n"
-                    f"1. You have trained a model (Week 3)\n"
+                    f"1. You have trained a model\n"
                     f"2. checkpoints/best_model.pth exists"
                 )
-                self.status_bar.showMessage("⚠️ Model not found! Train model first.")
+                self.status_bar.showMessage(" Model not found! Train model first.")
                 QMessageBox.warning(self, "Model Not Found", error_msg)
                 return
             
-            print(f"✓ Model file found! Loading...")
+            print(f"Model file found! Loading...")
             self.predictor = DeblurPredictor(str(model_path))
-            self.status_bar.showMessage("✓ Model loaded successfully")
-            print(f"✓ Model loaded successfully!")
+            self.status_bar.showMessage("Model loaded successfully")
+            print(f"Model loaded successfully!")
             
         except Exception as e:
             import traceback
             error_detail = traceback.format_exc()
-            print(f"❌ Error loading model:")
+            print(f"Error loading model:")
             print(error_detail)
             QMessageBox.critical(self, "Error", f"Failed to load model:\n{str(e)}")
-            self.status_bar.showMessage("❌ Model loading failed")
+            self.status_bar.showMessage("Model loading failed")
     
     def _on_load_clicked(self):
-        """Handle Load Image button click"""
+
         
         # Open file dialog
         file_path, _ = QFileDialog.getOpenFileName(
@@ -238,7 +238,7 @@ class DeblurWindow(QMainWindow):
             img_bgr = cv2.cvtColor(self.output_image, cv2.COLOR_RGB2BGR)
             cv2.imwrite(file_path, img_bgr)
             
-            self.status_bar.showMessage(f"✓ Saved: {Path(file_path).name}")
+            self.status_bar.showMessage(f"Saved: {Path(file_path).name}")
             QMessageBox.information(self, "Success", f"Saved to:\n{file_path}")
             
         except Exception as e:
